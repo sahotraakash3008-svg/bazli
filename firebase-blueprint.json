@@ -1,0 +1,560 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Account & Profile",
+      "description": "Customer, seller, delivery partner, and admin profile data",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "role": { "type": "string", "enum": ["customer", "seller", "delivery", "admin"] },
+        "loyaltyTier": { "type": "string", "enum": ["New", "Bronze", "Silver", "Gold", "VIP"] },
+        "isVipMember": { "type": "boolean" },
+        "vipPlan": { "type": "string", "enum": ["monthly", "quarterly", "annual"] },
+        "vipExpiryDate": { "type": "string" },
+        "vipSavingsToDate": { "type": "number" },
+        "walletCoins": { "type": "number" },
+        "totalOrders": { "type": "number" },
+        "totalSpending": { "type": "number" },
+        "profileImage": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["phone", "role"]
+    },
+    "userAddresses": {
+      "title": "User Saved Delivery Address",
+      "description": "Multi-address management for users (Home, Work, Other)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "receiverName": { "type": "string" },
+        "receiverPhone": { "type": "string" },
+        "flatNo": { "type": "string" },
+        "floor": { "type": "string" },
+        "street": { "type": "string" },
+        "city": { "type": "string" },
+        "pincode": { "type": "string" },
+        "landmark": { "type": "string" },
+        "deliveryInstructions": { "type": "array" },
+        "isDefault": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "receiverName", "receiverPhone", "street", "city", "pincode"]
+    },
+    "userFavorites": {
+      "title": "User Saved Favorites",
+      "description": "Bookmarked favorite products and restaurants",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "itemId": { "type": "string" },
+        "itemType": { "type": "string", "enum": ["product", "seller", "restaurant"] },
+        "name": { "type": "string" },
+        "image": { "type": "string" },
+        "price": { "type": "number" },
+        "sellerId": { "type": "string" },
+        "addedAt": { "type": "string" }
+      },
+      "required": ["userId", "itemId", "itemType"]
+    },
+    "userNotifications": {
+      "title": "User Notifications",
+      "description": "Order updates, deals alerts, and account alerts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["order", "deal", "reward", "system"] },
+        "orderId": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "title", "message"]
+    },
+    "userCart": {
+      "title": "User Persistent Cart",
+      "description": "Cross-device persistent shopping cart",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "sellerId": { "type": "string" },
+        "sellerType": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId"]
+    },
+    "sellers": {
+      "title": "Sellers & Restaurants",
+      "description": "Stores, restaurants, and cloud kitchens",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "businessName": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "city": { "type": "string" },
+        "gstNumber": { "type": "string" },
+        "fssaiNumber": { "type": "string" },
+        "sellerType": { "type": "string", "enum": ["grocery", "restaurant", "stationery"] },
+        "cuisineSpecialties": { "type": "array" },
+        "isKitchenOpen": { "type": "boolean" },
+        "avgPrepTimeMinutes": { "type": "number" },
+        "verificationStatus": { "type": "string", "enum": ["Verified", "Pending", "Rejected"] },
+        "totalSales": { "type": "number" },
+        "totalRevenue": { "type": "number" },
+        "rating": { "type": "number" },
+        "reviewCount": { "type": "number" },
+        "active": { "type": "boolean" },
+        "isAdminStore": { "type": "boolean" },
+        "commissionRate": { "type": "number" },
+        "totalCommissionPaid": { "type": "number" },
+        "walletBalance": { "type": "number" },
+        "bankAccountOrUpi": { "type": "string" },
+        "bannerImage": { "type": "string" },
+        "menuPhotos": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["businessName", "phone", "sellerType"]
+    },
+    "restaurantBranches": {
+      "title": "Restaurant Branches & Outlets",
+      "description": "Multi-location outlets for restaurant chains",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sellerId": { "type": "string" },
+        "branchName": { "type": "string" },
+        "address": { "type": "string" },
+        "phone": { "type": "string" },
+        "managerName": { "type": "string" },
+        "isOpen": { "type": "boolean" },
+        "deliveryZoneId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["sellerId", "branchName", "phone", "address"]
+    },
+    "categories": {
+      "title": "Product & Menu Categories",
+      "description": "Taxonomy of grocery aisles, cuisines, and departments",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "icon": { "type": "string" },
+        "image": { "type": "string" },
+        "type": { "type": "string", "enum": ["grocery", "restaurant", "stationery"] },
+        "orderIndex": { "type": "number" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["name", "slug"]
+    },
+    "subcategories": {
+      "title": "Subcategories",
+      "description": "Nested category tags",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "icon": { "type": "string" },
+        "orderIndex": { "type": "number" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["categoryId", "name"]
+    },
+    "products": {
+      "title": "Products & Menu Items",
+      "description": "Unified catalog for groceries, mandi items, and restaurant dishes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "quantity": { "type": "string" },
+        "category": { "type": "string" },
+        "subcategory": { "type": "string" },
+        "mrp": { "type": "number" },
+        "sellingPrice": { "type": "number" },
+        "discountPercentage": { "type": "number" },
+        "bargainingAllowed": { "type": "boolean" },
+        "minBargainPrice": { "type": "number" },
+        "maxBargainDiscountPercent": { "type": "number" },
+        "maxBargainAttempts": { "type": "number" },
+        "weightType": { "type": "string", "enum": ["fixed", "flexible"] },
+        "isWeightFlexible": { "type": "boolean" },
+        "allowCustomWeight": { "type": "boolean" },
+        "unitType": { "type": "string", "enum": ["weight", "volume", "count"] },
+        "customWeightUnit": { "type": "string", "enum": ["g", "kg", "ml", "L", "pcs", "pack"] },
+        "minCustomQuantity": { "type": "number" },
+        "maxCustomQuantity": { "type": "number" },
+        "stock": { "type": "number" },
+        "sellerId": { "type": "string" },
+        "sellerName": { "type": "string" },
+        "sellerType": { "type": "string", "enum": ["grocery", "restaurant", "stationery"] },
+        "image": { "type": "string" },
+        "images": { "type": "array" },
+        "description": { "type": "string" },
+        "highlights": { "type": "array" },
+        "shelfLife": { "type": "string" },
+        "origin": { "type": "string" },
+        "rating": { "type": "number" },
+        "reviewCount": { "type": "number" },
+        "tags": { "type": "array" },
+        "isPopular": { "type": "boolean" },
+        "isTodayDeal": { "type": "boolean" },
+        "foodType": { "type": "string", "enum": ["veg", "non-veg", "egg"] },
+        "prepTimeMinutes": { "type": "number" },
+        "isVeg": { "type": "boolean" },
+        "isSoldOut": { "type": "boolean" },
+        "spiceLevel": { "type": "string", "enum": ["Mild", "Medium", "Spicy"] },
+        "cuisine": { "type": "string" },
+        "portionSize": { "type": "string" },
+        "variants": { "type": "array" },
+        "options": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["name", "sellingPrice", "category", "sellerId"]
+    },
+    "orders": {
+      "title": "Orders",
+      "description": "Unified order lifecycle with multi-role states and financial settlements",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orderId": { "type": "string" },
+        "userId": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "discount": { "type": "number" },
+        "bargainDiscount": { "type": "number" },
+        "couponDiscount": { "type": "number" },
+        "couponCode": { "type": "string" },
+        "deliveryFee": { "type": "number" },
+        "deliveryTip": { "type": "number" },
+        "deliveryInstructions": { "type": "array" },
+        "cookingInstructions": { "type": "string" },
+        "specialInstructions": { "type": "string" },
+        "platformFee": { "type": "number" },
+        "tax": { "type": "number" },
+        "gstBreakdown": { "type": "object" },
+        "finalAmount": { "type": "number" },
+        "currency": { "type": "string" },
+        "paymentStatus": { "type": "string", "enum": ["Pending", "Payment Initiated", "Paid", "Failed", "Cancelled", "Refunded"] },
+        "paymentMethod": { "type": "string", "enum": ["Razorpay", "UPI", "Credit/Debit Card", "Cash on Delivery", "NetBanking", "Wallet"] },
+        "paymentId": { "type": "string" },
+        "razorpayOrderId": { "type": "string" },
+        "razorpayPaymentId": { "type": "string" },
+        "razorpaySignature": { "type": "string" },
+        "paymentVerifiedAt": { "type": "string" },
+        "razorpayWebhookEventId": { "type": "string" },
+        "deliveryAddress": { "type": "object" },
+        "deliveryZoneId": { "type": "string" },
+        "ecoPackaging": { "type": "boolean" },
+        "noCutlery": { "type": "boolean" },
+        "isVipOrder": { "type": "boolean" },
+        "sellerId": { "type": "string" },
+        "sellerName": { "type": "string" },
+        "sellerType": { "type": "string", "enum": ["grocery", "restaurant", "stationery"] },
+        "branchId": { "type": "string" },
+        "orderType": { "type": "string", "enum": ["grocery", "restaurant", "stationery"] },
+        "kitchenStatus": { "type": "string", "enum": ["Pending Acceptance", "Preparing in Kitchen", "Food Ready for Pickup", "Handed Over to Rider"] },
+        "deliveryPartnerId": { "type": "string" },
+        "deliveryPartnerName": { "type": "string" },
+        "orderStatus": { "type": "string", "enum": ["Pending", "Confirmed", "Preparing", "Ready for Pickup", "Picked Up", "Out for Delivery", "Delivered", "Cancelled", "Refunded"] },
+        "deliveryOtp": { "type": "string" },
+        "pickupOtp": { "type": "string" },
+        "sellerPickupConfirmed": { "type": "boolean" },
+        "deliveryPickupConfirmed": { "type": "boolean" },
+        "pickupConfirmedAt": { "type": "string" },
+        "adminCommissionRate": { "type": "number" },
+        "adminCommissionAmount": { "type": "number" },
+        "sellerPayoutAmount": { "type": "number" },
+        "riderEarning": { "type": "number" },
+        "isAdminStoreOrder": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["customerId", "sellerId", "finalAmount", "orderStatus", "paymentStatus"]
+    },
+    "orderStatusHistory": {
+      "title": "Order Status History Audit Trail",
+      "description": "Immutable state progression events for tracking and analytics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orderId": { "type": "string" },
+        "status": { "type": "string" },
+        "actorRole": { "type": "string", "enum": ["customer", "seller", "delivery", "admin", "system"] },
+        "actorName": { "type": "string" },
+        "note": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["orderId", "status", "timestamp"]
+    },
+    "deliveryPartners": {
+      "title": "Delivery Partners Fleet",
+      "description": "Riders, live GPS state, shift metrics, and earnings ledgers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "vehicleType": { "type": "string" },
+        "vehicleNumber": { "type": "string" },
+        "verificationStatus": { "type": "string", "enum": ["Verified", "Pending", "Rejected"] },
+        "currentStatus": { "type": "string", "enum": ["Available", "On Duty", "Delivering", "Offline"] },
+        "assignedOrdersCount": { "type": "number" },
+        "completedOrdersCount": { "type": "number" },
+        "totalEarnings": { "type": "number" },
+        "walletBalance": { "type": "number" },
+        "todayEarnings": { "type": "number" },
+        "weeklyEarnings": { "type": "number" },
+        "rating": { "type": "number" },
+        "operatingZoneId": { "type": "string" },
+        "city": { "type": "string" },
+        "bankAccountNumber": { "type": "string" },
+        "upiId": { "type": "string" },
+        "activeLoadCount": { "type": "number" },
+        "liveCoordinates": { "type": "object" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["name", "phone", "vehicleType"]
+    },
+    "coupons": {
+      "title": "Coupons & Discounts",
+      "description": "Promo codes and promotional rules",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "discountAmount": { "type": "number" },
+        "discountPercent": { "type": "number" },
+        "minOrder": { "type": "number" },
+        "maxDiscount": { "type": "number" },
+        "applicableCategory": { "type": "string" },
+        "newCustomersOnly": { "type": "boolean" },
+        "expiryDate": { "type": "string" },
+        "description": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["code", "minOrder", "maxDiscount"]
+    },
+    "offers": {
+      "title": "Special Offers & Flash Sales",
+      "description": "Marketing highlight cards and daily deals",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "badge": { "type": "string" },
+        "description": { "type": "string" },
+        "discountPercent": { "type": "number" },
+        "gradient": { "type": "string" },
+        "image": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "isFlashSale": { "type": "boolean" },
+        "expiryDate": { "type": "string" },
+        "applicableProductIds": { "type": "array" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "category", "discountPercent"]
+    },
+    "banners": {
+      "title": "Hero Banners & Carousel Slides",
+      "description": "Homepage promo slides with dynamic action routes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "badge": { "type": "string" },
+        "buttonText": { "type": "string" },
+        "actionType": { "type": "string", "enum": ["category", "deals", "bargain", "shop"] },
+        "targetValue": { "type": "string" },
+        "gradient": { "type": "string" },
+        "image": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "orderIndex": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "buttonText", "image"]
+    },
+    "reviews": {
+      "title": "Reviews & Ratings",
+      "description": "Customer ratings and reviews for orders, products, and riders",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orderId": { "type": "string" },
+        "productId": { "type": "string" },
+        "sellerId": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "orderRating": { "type": "number" },
+        "riderRating": { "type": "number" },
+        "comment": { "type": "string" },
+        "orderFeedback": { "type": "string" },
+        "riderFeedback": { "type": "string" },
+        "tags": { "type": "array" },
+        "addedTip": { "type": "number" },
+        "verifiedPurchase": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["customerId", "customerName"]
+    },
+    "adminSettings": {
+      "title": "Platform Settings & Configurations",
+      "description": "Dynamic app configurations, bargaining rules, and content CMS",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "configType": { "type": "string", "enum": ["app_config", "bargaining_rules", "delivery_zones", "site_content"] },
+        "data": { "type": "object" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["configType"]
+    },
+    "bargainSessions": {
+      "title": "AI Bargaining Sessions",
+      "description": "Customer price negotiation session records with Bazli AI bot",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "originalPrice": { "type": "number" },
+        "customerOffer": { "type": "number" },
+        "counterOffer": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected", "counter"] },
+        "finalAgreedPrice": { "type": "number" },
+        "attemptsUsed": { "type": "number" },
+        "maxAttempts": { "type": "number" },
+        "expiresAt": { "type": "number" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "productId", "customerOffer", "status"]
+    },
+    "auditLogs": {
+      "title": "System Audit Logs",
+      "description": "Administrative actions and security trace logs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "actorRole": { "type": "string" },
+        "actorName": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" }
+      },
+      "required": ["timestamp", "action", "details"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "users",
+      "description": "Customer, seller, rider, and admin user profiles"
+    },
+    "/users/{userId}/addresses/{addressId}": {
+      "schema": "userAddresses",
+      "description": "User saved shipping addresses"
+    },
+    "/users/{userId}/favorites/{itemId}": {
+      "schema": "userFavorites",
+      "description": "Bookmarked favorite products and restaurants"
+    },
+    "/users/{userId}/notifications/{notificationId}": {
+      "schema": "userNotifications",
+      "description": "Direct user push alerts and order notifications"
+    },
+    "/users/{userId}/cart/current": {
+      "schema": "userCart",
+      "description": "Current active shopping cart for persistent checkout across devices"
+    },
+    "/sellers/{sellerId}": {
+      "schema": "sellers",
+      "description": "Merchants, grocery vendors, restaurants, and cloud kitchens"
+    },
+    "/sellers/{sellerId}/branches/{branchId}": {
+      "schema": "restaurantBranches",
+      "description": "Multi-location restaurant branches and outlet hubs"
+    },
+    "/categories/{categoryId}": {
+      "schema": "categories",
+      "description": "Top-level grocery aisles, cuisines, and stationery departments"
+    },
+    "/categories/{categoryId}/subcategories/{subcategoryId}": {
+      "schema": "subcategories",
+      "description": "Nested sub-aisles and food subcategories"
+    },
+    "/products/{productId}": {
+      "schema": "products",
+      "description": "Unified inventory of grocery items, mandi staples, dishes, and stationery"
+    },
+    "/orders/{orderId}": {
+      "schema": "orders",
+      "description": "Master purchases and live order deliveries"
+    },
+    "/orders/{orderId}/status_history/{historyId}": {
+      "schema": "orderStatusHistory",
+      "description": "Order progression history log"
+    },
+    "/delivery_partners/{partnerId}": {
+      "schema": "deliveryPartners",
+      "description": "Delivery fleet rider profiles, GPS coordinates, and wallets"
+    },
+    "/coupons/{couponId}": {
+      "schema": "coupons",
+      "description": "Promotional discount codes"
+    },
+    "/offers/{offerId}": {
+      "schema": "offers",
+      "description": "Deals of the day, category promotions, and flash sales"
+    },
+    "/banners/{bannerId}": {
+      "schema": "banners",
+      "description": "Homepage hero promotional banner slides"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "reviews",
+      "description": "Aggregated reviews and ratings for items, stores, and riders"
+    },
+    "/admin_settings/{configId}": {
+      "schema": "adminSettings",
+      "description": "Global application configuration documents"
+    },
+    "/bargain_sessions/{sessionId}": {
+      "schema": "bargainSessions",
+      "description": "Active and past AI price negotiation sessions"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "auditLogs",
+      "description": "Admin and vendor audit log stream"
+    }
+  }
+}
