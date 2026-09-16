@@ -21,7 +21,7 @@ import {
   DispatchPingPayload,
   SiteContentConfig
 } from './types';
-import { rankRidersForOrder, createDispatchPing } from './utils/dispatchEngine';
+import { rankRidersForOrder, createDispatchPing } from './utils/DispatchEngine';
 import {
   INITIAL_PRODUCTS,
   INITIAL_SELLERS,
