@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Product,
@@ -19,9 +19,17 @@ import {
   CustomDeal,
   AppFeatureFlags,
   DispatchPingPayload,
-  SiteContentConfig
+  SiteContentConfig,
+  OrderReview
 } from './types';
-import { rankRidersForOrder, createDispatchPing } from '../dispatchEngine';
+import { rankRidersForOrder, createDispatchPing } from './utils/dispatchEngine';
+import { getEffectiveSellerCommission } from './utils/sellerCommission';
+import {
+  isGroceryProduct,
+  isRestaurantProduct,
+  isStationeryProduct,
+  getProductSector
+} from './utils/productSector';
 import {
   INITIAL_PRODUCTS,
   INITIAL_SELLERS,
@@ -48,11 +56,13 @@ import { BargainShowcase } from './components/BargainShowcase';
 import { TodaysDealsBanner } from './components/TodaysDealsBanner';
 import { CategoryAdvertisementBanners } from './components/CategoryAdvertisementBanners';
 import { CategoriesView } from './components/CategoriesView';
+import { SearchResultsView } from './components/SearchResultsView';
+import { SiteTheme, getSavedTheme, DEFAULT_THEME, applyThemeToDocument } from './utils/themeUtils';
 import { CircularCategories } from './components/CircularCategories';
 import { ProductShelf } from './components/ProductShelf';
 import { ProductDetailModal } from './components/ProductDetailModal';
+import { SplashScreen } from './components/SplashScreen';
 import { useNavigationHistory } from './hooks/useNavigationHistory';
-import { NavigationBackBar } from './components/NavigationBackBar';
 import { getTodaysDealSchedule } from './data/todaysDeals';
 import { BazliAIAssistant } from './components/BazliAIAssistant';
 import { calculateProductSearchScore, normalizeSearchText, searchAndRankProducts } from './utils/searchUtils';
@@ -64,9 +74,9 @@ import { SellerAuthModal } from './components/Seller/SellerAuthModal';
 import { DeliveryPartnerRegisterModal } from './components/DeliveryPartnerRegisterModal';
 import { DeliveryAuthModal } from './components/DeliveryAuthModal';
 import { CustomerMobileOtpBanner } from './components/CustomerMobileOtpBanner';
+import { OrderReviewModal } from './components/Customer/OrderReviewModal';
 import { CustomerRestaurantPortal } from './components/CustomerRestaurantPortal';
 import { CustomerStationeryPortal } from './components/CustomerStationeryPortal';
-import { CompactServiceToggle } from './components/CompactServiceToggle';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { HyperlocalLiveTrackerBar } from './components/HyperlocalLiveTrackerBar';
 import { SmartRecipeKits } from './components/SmartRecipeKits';
@@ -114,6 +124,7 @@ import {
   syncAdminSettingsToFirestore,
   seedInitialFirestoreDataIfEmpty
 } from './lib/firestoreSync';
+import { submitOrderReviewInFirestore } from './lib/firestoreService';
 import {
   INITIAL_BARGAINING_RULES,
   INITIAL_DELIVERY_ZONES
@@ -147,7 +158,11 @@ import {
   PhoneCall,
   Mail,
   UtensilsCrossed,
-  MessageCircle
+  MessageCircle,
+  Instagram,
+  Facebook,
+  Twitter,
+  Star
 } from 'lucide-react';
 
 const APP_ZONES: DeliveryZone[] = [
@@ -240,10 +255,16 @@ export default function App() {
   
   const [currentRole, setCurrentRole] = useState<UserRole>('customer');
   const [activeTab, setActiveTab] = useState<string>('home');
+  const [searchOriginPortal, setSearchOriginPortal] = useState<'grocery' | 'restaurant' | 'stationery'>('grocery');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [bargainOnly, setBargainOnly] = useState<boolean>(false);
   const [highlightedProductId, setHighlightedProductId] = useState<string | null>(null);
+  // Animated Splash Screen state - triggers on first site load or logo click
+  const [showSplash, setShowSplash] = useState<boolean>(true);
+  const handleSplashComplete = useCallback(() => {
+    setShowSplash(false);
+  }, []);
 
   // Cart & Loyalty State
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -276,6 +297,13 @@ export default function App() {
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState<boolean>(false);
   const [isLegalModalOpen, setIsLegalModalOpen] = useState<boolean>(false);
   const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy' | 'refund' | 'shipping' | 'contact'>('terms');
+
+  // Customer Dynamic Theme Color State (Default: Asli Bazli Gold)
+  const [siteTheme, setSiteTheme] = useState<SiteTheme>(() => getSavedTheme());
+
+  useEffect(() => {
+    applyThemeToDocument(siteTheme);
+  }, [siteTheme]);
 
   const handleOpenLegalModal = (tab: 'terms' | 'privacy' | 'refund' | 'shipping' | 'contact' = 'terms') => {
     setLegalModalTab(tab);
@@ -605,6 +633,34 @@ export default function App() {
   const [trackingOrder, setTrackingOrder] = useState<Order | null>(null);
   const [isTrackingModalOpen, setIsTrackingModalOpen] = useState<boolean>(false);
 
+  // Customer Post-Delivery Experience Review Modal
+  const [reviewingOrder, setReviewingOrder] = useState<Order | null>(null);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState<boolean>(false);
+
+  const handleOrderReview = async (orderId: string, review: OrderReview) => {
+    setOrders(prevOrders =>
+      prevOrders.map(ord => (ord.id === orderId ? { ...ord, review } : ord))
+    );
+    if (reviewingOrder && reviewingOrder.id === orderId) {
+      setReviewingOrder(prev => (prev ? { ...prev, review } : null));
+    }
+    if (trackingOrder && trackingOrder.id === orderId) {
+      setTrackingOrder(prev => (prev ? { ...prev, review } : null));
+    }
+
+    try {
+      await submitOrderReviewInFirestore(orderId, review);
+    } catch (e) {
+      console.error('Error syncing review to Firestore:', e);
+    }
+
+    showToast(`🌟 Thank you ${review.customerName}! Your rating & feedback have been recorded.`);
+  };
+
+  const latestUnratedDeliveredOrder = useMemo(() => {
+    return orders.find(o => o.orderStatus === 'Delivered' && !o.review);
+  }, [orders]);
+
   // Delivery Partner Registration Modal
   const [isDeliveryRegisterOpen, setIsDeliveryRegisterOpen] = useState<boolean>(false);
 
@@ -656,11 +712,30 @@ export default function App() {
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(() => {
     try {
       const saved = localStorage.getItem('bazli_feature_flags') || localStorage.getItem('apnabazar_feature_flags');
-      return saved ? JSON.parse(saved) : INITIAL_FEATURE_FLAGS;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          ...INITIAL_FEATURE_FLAGS,
+          ...parsed,
+          freeDeliveryThreshold: parsed.freeDeliveryThreshold !== undefined ? parsed.freeDeliveryThreshold : 129,
+          platformFee: parsed.platformFee !== undefined ? parsed.platformFee : 0
+        };
+      }
+      return INITIAL_FEATURE_FLAGS;
     } catch {
       return INITIAL_FEATURE_FLAGS;
     }
   });
+
+  // Dynamic delivery zone with real-time settings synced from Admin Panel
+  const currentSelectedZone: DeliveryZone = useMemo(() => {
+    const base = APP_ZONES[0];
+    return {
+      ...base,
+      freeDeliveryThreshold: featureFlags.freeDeliveryThreshold !== undefined ? featureFlags.freeDeliveryThreshold : 129,
+      deliveryFee: featureFlags.standardDeliveryFee !== undefined ? featureFlags.standardDeliveryFee : 19,
+    };
+  }, [featureFlags.freeDeliveryThreshold, featureFlags.standardDeliveryFee]);
 
   // Dynamic Site-Wide Text & Banners CMS (Managed from Admin Portal)
   const [siteContent, setSiteContent] = useState<SiteContentConfig>(() => {
@@ -1257,6 +1332,22 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Direct Submit to Dedicated Search Results Page (e.g., on Enter key or Search button click)
+  const handleSubmitSearch = (query: string) => {
+    const clean = (query || '').trim();
+    if (!clean) {
+      setSearchQuery('');
+      if (activeTab === 'search') {
+        setActiveTab('home');
+      }
+      return;
+    }
+    setCurrentRole('customer');
+    setSearchQuery(clean);
+    setActiveTab('search');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   // Direct Shop All Navigation (when clicking Shop All or Shop Now)
   const handleGoToShop = () => {
     setCurrentRole('customer');
@@ -1376,10 +1467,15 @@ export default function App() {
   // Smart multi-field, substring & tokenized grocery search with ranking
   const cleanSearch = normalizeSearchText(searchQuery);
 
+  // Strictly isolated Grocery products for the main customer grocery feed
+  const groceryProducts = React.useMemo(() => {
+    return products.filter(isGroceryProduct);
+  }, [products]);
+
   const filteredProducts = React.useMemo(() => {
-    // If a search query is active, search across the entire store with ranking
+    // If a search query is active, search across grocery products with ranking
     if (cleanSearch !== '') {
-      return products
+      return groceryProducts
         .map(product => {
           const { matches, score } = calculateProductSearchScore(product, cleanSearch);
           const matchesBargain = !bargainOnly || product.bargainingAllowed;
@@ -1390,8 +1486,8 @@ export default function App() {
         .map(item => item.product);
     }
 
-    // Default category & bargain filtering when no search query
-    return products.filter(product => {
+    // Default category & bargain filtering within Grocery section
+    return groceryProducts.filter(product => {
       const pCat = product.category.toLowerCase();
       const sCat = selectedCategory.toLowerCase();
       const matchesCat =
@@ -1409,7 +1505,7 @@ export default function App() {
 
       return matchesCat && matchesBargain;
     });
-  }, [products, cleanSearch, selectedCategory, bargainOnly]);
+  }, [groceryProducts, cleanSearch, selectedCategory, bargainOnly]);
 
   // Helper to check if customer has purchased a product
   const hasPurchasedProduct = (productId: string) => {
@@ -1762,8 +1858,20 @@ export default function App() {
     const customerOrders = orders.filter(o => o.customerId === 'c1' || o.customerId === 'CUST-8831');
     const isFirstTwoOrders = customerOrders.length < 2 || loyaltyTier === 'New';
     const isVip = loyaltyTier === 'VIP' || !!customerProfile.isVipMember;
-    const deliveryFee = payload.isExpress ? 25 : (isFirstTwoOrders || isVip || totalRaw >= 149) ? 0 : 19;
-    const platformFee = isVip ? 0 : 9;
+
+    // Detect restaurant items in cart
+    const isRestaurantOrder = cartItems.some(
+      i => i.product.sellerType === 'restaurant' ||
+           i.product.category === 'Restaurant Meals & Dining' ||
+           i.product.category?.toLowerCase().includes('restaurant') ||
+           i.product.category?.toLowerCase().includes('kitchen')
+    );
+
+    const freeThreshold = isRestaurantOrder ? 499 : (featureFlags.freeDeliveryThreshold !== undefined ? featureFlags.freeDeliveryThreshold : 129);
+    const standardFee = isRestaurantOrder ? 21 : (featureFlags.standardDeliveryFee !== undefined ? featureFlags.standardDeliveryFee : 19);
+    const deliveryFee = payload.isExpress ? 25 : (isFirstTwoOrders || isVip || totalRaw >= freeThreshold) ? 0 : standardFee;
+    const basePlatformFee = isRestaurantOrder ? 11 : (featureFlags.platformFee !== undefined ? featureFlags.platformFee : 0);
+    const platformFee = isVip ? 0 : basePlatformFee;
     const itemsTax = 0;
     const platformTax = 0;
     const tax = 0;
@@ -1772,8 +1880,12 @@ export default function App() {
     const orderSellerId = cartItems[0]?.product.sellerId || 'S1';
     const orderSellerName = cartItems[0]?.product.sellerName || 'Gupta Grocery Store';
     const isAdminStore = orderSellerId === 's-admin' || orderSellerName.includes('Bazli');
-    const adminCommissionRate = isAdminStore ? 0 : 10;
-    const adminCommissionAmount = isAdminStore ? finalAmt : Math.round((finalAmt * 10) / 100);
+    
+    // Dynamic 2-Month 0% Commission Welcome Promo Check
+    const matchedSeller = sellers.find(s => s.id === orderSellerId);
+    const commissionInfo = getEffectiveSellerCommission(matchedSeller || { id: orderSellerId, businessName: orderSellerName, isAdminStore });
+    const adminCommissionRate = isAdminStore ? 0 : commissionInfo.rate;
+    const adminCommissionAmount = isAdminStore ? finalAmt : Math.round((finalAmt * adminCommissionRate) / 100);
     const sellerPayoutAmount = isAdminStore ? 0 : (finalAmt - adminCommissionAmount);
 
     // Dynamic Draft Order for Priority Dispatch Matrix Ranking
@@ -1818,6 +1930,8 @@ export default function App() {
       deliveryZoneId: 'zone-a',
       sellerId: orderSellerId,
       sellerName: orderSellerName,
+      sellerType: isRestaurantOrder ? 'restaurant' : 'grocery',
+      orderType: isRestaurantOrder ? 'restaurant' : 'grocery',
       deliveryPartnerId: 'D1',
       deliveryPartnerName: 'Vikram Singh (Motorcycle)',
       deliveryOtp: Math.floor(1000 + Math.random() * 9000).toString(),
@@ -1974,30 +2088,34 @@ export default function App() {
     showToast(`📡 Live Radar Ping dispatched to ${activePartner.name}! 30s countdown active.`);
   };
 
-  // Seller Handlers
+  // Seller & Admin Product Catalog Handlers
   const handleAddProduct = async (prodData: Partial<Product>) => {
+    const sector = prodData.sellerType || getProductSector(prodData);
     const newProd: Product = {
-      id: `P-${Date.now()}`,
+      id: `P-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       name: prodData.name || 'New Item',
-      category: prodData.category || 'Atta, Rice & Dal',
+      category: prodData.category || (sector === 'restaurant' ? 'Biryani & Rice Bowls' : sector === 'stationery' ? 'Notebooks & Registers' : 'Atta, Rice & Dal'),
       mrp: prodData.mrp || 100,
       sellingPrice: prodData.sellingPrice || 90,
-      discountPercentage: prodData.discountPercentage || 10,
-      quantity: prodData.quantity || '1 kg',
-      stock: prodData.stock || 50,
-      sellerId: prodData.sellerId || 'S1',
-      sellerName: prodData.sellerName || 'Gupta Grocery Store',
+      discountPercentage: prodData.discountPercentage !== undefined ? prodData.discountPercentage : 10,
+      quantity: prodData.quantity || (sector === 'restaurant' ? '1 Portion' : sector === 'stationery' ? '1 Pack' : '1 kg'),
+      stock: prodData.stock !== undefined ? prodData.stock : 50,
+      sellerId: prodData.sellerId || (sector === 'restaurant' ? 'r1' : sector === 'stationery' ? 'st1' : 's-admin'),
+      sellerName: prodData.sellerName || (sector === 'restaurant' ? 'Spice Junction Kitchen & Dine' : sector === 'stationery' ? 'Vidya Book Depot & Student Stationery' : 'Bazli Official Store'),
+      sellerType: sector,
       image: prodData.image || 'https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=600&q=80',
-      description: prodData.description || 'Fresh daily essential',
-      bargainingAllowed: true,
+      description: prodData.description || (sector === 'restaurant' ? 'Freshly prepared kitchen delight' : sector === 'stationery' ? 'Quality stationery essential' : 'Fresh daily grocery essential'),
+      bargainingAllowed: prodData.bargainingAllowed !== undefined ? prodData.bargainingAllowed : (sector === 'grocery'),
       minBargainPrice: prodData.minBargainPrice || Math.round((prodData.sellingPrice || 100) * 0.80),
-      rating: 4.8,
-      reviewCount: 12
+      rating: 5.0,
+      reviewCount: 1,
+      // Merge all specific domain fields (e.g. foodType, prepTimeMinutes, isVeg, spiceLevel, images, weightType, returnPolicy, refundPolicy, highlights, tags)
+      ...prodData
     };
 
     setProducts(prev => [newProd, ...prev]);
     syncProductToFirestore(newProd).catch(e => console.warn('Product sync note:', e));
-    showToast(`Added ${newProd.name} to store catalog!`);
+    showToast(`Added "${newProd.name}" to ${sector.toUpperCase()} catalog!`);
   };
 
   const handleUpdateProduct = async (id: string, updates: Partial<Product>) => {
@@ -2553,13 +2671,61 @@ export default function App() {
   );
 
   return (
-    <div className={`min-h-screen font-sans flex flex-col transition-colors duration-300 ${
-      isRestaurantMode 
-        ? 'bg-[#fff7f2] text-stone-900 selection:bg-orange-500 selection:text-white' 
-        : isStationeryMode
-        ? 'bg-[#fdfaff] text-stone-900 selection:bg-pink-500 selection:text-white'
-        : 'bg-[#f7f3eb] text-stone-900 selection:bg-amber-400 selection:text-stone-950'
-    }`}>
+    <div
+      style={{
+        backgroundColor: isRestaurantMode ? undefined : isStationeryMode ? undefined : siteTheme.bg
+      }}
+      className={`min-h-screen font-sans flex flex-col transition-colors duration-700 relative ${
+        isRestaurantMode 
+          ? 'bg-[#fff8f3] text-stone-900 selection:bg-orange-500 selection:text-white' 
+          : isStationeryMode
+          ? 'bg-[#faf6ff] text-stone-900 selection:bg-purple-600 selection:text-white'
+          : 'bg-[#faf8f5] text-stone-900 selection:bg-amber-400 selection:text-stone-950'
+      }`}
+    >
+      {/* Dynamic Ambient Atmospheric Glow (Reactions to active portal: Grocery, Restaurant, Stationery) */}
+      <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden select-none">
+        {/* Soft Radial Center Aura */}
+        <div
+          className={`absolute -top-36 left-1/2 -translate-x-1/2 w-[700px] sm:w-[1300px] h-[550px] rounded-full blur-3xl transition-all duration-700 pointer-events-none opacity-70 ${
+            isRestaurantMode
+              ? 'bg-gradient-to-b from-orange-500/30 via-amber-500/15 to-transparent'
+              : isStationeryMode
+              ? 'bg-gradient-to-b from-purple-600/30 via-indigo-500/15 to-transparent'
+              : 'bg-gradient-to-b from-amber-400/25 via-emerald-400/10 to-transparent'
+          }`}
+        />
+        {/* Mid-Right Accent Flare */}
+        <div
+          className={`absolute top-[480px] -right-28 w-[520px] h-[520px] rounded-full blur-3xl transition-all duration-700 pointer-events-none ${
+            isRestaurantMode
+              ? 'opacity-25 bg-orange-500/30'
+              : isStationeryMode
+              ? 'opacity-25 bg-purple-500/30'
+              : 'opacity-20 bg-emerald-500/25'
+          }`}
+        />
+        {/* Mid-Left Accent Flare */}
+        <div
+          className={`absolute top-[980px] -left-28 w-[520px] h-[520px] rounded-full blur-3xl transition-all duration-700 pointer-events-none ${
+            isRestaurantMode
+              ? 'opacity-20 bg-rose-500/25'
+              : isStationeryMode
+              ? 'opacity-20 bg-indigo-500/25'
+              : 'opacity-20 bg-amber-400/25'
+          }`}
+        />
+        {/* Lower Ambient Floor Flare */}
+        <div
+          className={`absolute top-[1600px] left-1/3 w-[600px] h-[400px] rounded-full blur-3xl transition-all duration-700 pointer-events-none ${
+            isRestaurantMode
+              ? 'opacity-15 bg-amber-500/20'
+              : isStationeryMode
+              ? 'opacity-15 bg-fuchsia-500/20'
+              : 'opacity-15 bg-teal-400/20'
+          }`}
+        />
+      </div>
       
       {/* Toast Notification */}
       {toastMessage && (
@@ -2596,9 +2762,28 @@ export default function App() {
         loyaltyTier={loyaltyTier}
         onOpenOrders={() => setIsOrderHistoryOpen(true)}
         searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
+        onSearchChange={(q) => {
+          setSearchQuery(q);
+          if (q.trim()) {
+            if (activeTab === 'restaurants') {
+              setSearchOriginPortal('restaurant');
+            } else if (activeTab === 'stationery') {
+              setSearchOriginPortal('stationery');
+            } else if (activeTab !== 'search') {
+              setSearchOriginPortal('grocery');
+            }
+          }
+        }}
         activeTab={activeTab}
         setActiveTab={(tab) => {
+          if (tab === 'restaurants') {
+            setSearchOriginPortal('restaurant');
+          } else if (tab === 'stationery') {
+            setSearchOriginPortal('stationery');
+          } else {
+            setSearchOriginPortal('grocery');
+          }
+
           if (tab === 'bargain') {
             handleGoToBargainZone();
           } else if (tab === 'shop') {
@@ -2610,7 +2795,10 @@ export default function App() {
           }
         }}
         onSelectTodaysDeals={handleSelectTodaysDeals}
-        onLogoClick={handleGoHome}
+        onLogoClick={() => {
+          setShowSplash(true);
+          handleGoHome();
+        }}
         onHomeClick={handleGoHome}
         onShopAllClick={handleGoToShop}
         products={products}
@@ -2639,14 +2827,25 @@ export default function App() {
         previousLabel={previousLabel}
         onOpenParchhiScanner={() => setIsParchhiScannerOpen(true)}
         onOpenPrintoutModal={() => setIsPrintoutModalOpen(true)}
-      />
-
-      {/* Persistent Multi-Page Navigation Back Bar & Edge-Swipe Feedback */}
-      <NavigationBackBar
-        canGoBack={canGoBack}
-        onGoBack={goBack}
-        previousLabel={previousLabel}
-        historyLength={historyLength}
+        onSubmitSearch={handleSubmitSearch}
+        currentTheme={siteTheme}
+        onThemeChange={setSiteTheme}
+        featureFlags={featureFlags}
+        siteContent={siteContent}
+        activeDeliveryOrder={activeFloatingOrder}
+        onTrackDeliveryOrder={() => {
+          if (activeFloatingOrder) {
+            setTrackingOrder(activeFloatingOrder);
+            setIsTrackingModalOpen(true);
+          }
+        }}
+        unratedDeliveredOrder={latestUnratedDeliveredOrder}
+        onRateDeliveredOrder={() => {
+          if (latestUnratedDeliveredOrder) {
+            setReviewingOrder(latestUnratedDeliveredOrder);
+            setIsReviewModalOpen(true);
+          }
+        }}
       />
 
       {/* Main Content Area */}
@@ -2669,7 +2868,61 @@ export default function App() {
               }}
             />
 
-            {activeTab === 'restaurants' ? (
+            {activeTab === 'search' || (searchQuery && searchQuery.trim().length > 0) ? (
+              <SearchResultsView
+                query={searchQuery}
+                products={products}
+                portalContext={searchOriginPortal}
+                onSwitchPortalContext={(newPortal) => {
+                  setSearchOriginPortal(newPortal);
+                  if (newPortal === 'restaurant') {
+                    setActiveTab('restaurants');
+                  } else if (newPortal === 'stationery') {
+                    setActiveTab('stationery');
+                  } else {
+                    setActiveTab('home');
+                  }
+                }}
+                cartItems={cartItems}
+                bargainSessions={bargainSessions}
+                wishlistIds={wishlistIds}
+                reviews={reviews}
+                hasPurchasedProduct={hasPurchasedProduct}
+                highlightedProductId={highlightedProductId}
+                onAddToCart={handleAddToCart}
+                onBargainClick={(prod, weight, price) => handleOpenBargain(prod, weight, price)}
+                onUpdateCartQty={(prod, qty, w) => handleUpdateCartQuantity(prod.id, qty, w)}
+                onToggleWishlist={handleToggleWishlist}
+                onAddReview={handleAddReview}
+                onOpenProductDetail={setSelectedDetailProduct}
+                onClearSearch={() => {
+                  setSearchQuery('');
+                  if (searchOriginPortal === 'restaurant') {
+                    setActiveTab('restaurants');
+                  } else if (searchOriginPortal === 'stationery') {
+                    setActiveTab('stationery');
+                  } else {
+                    setActiveTab('home');
+                  }
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                onSearchQueryChange={(newQuery) => {
+                  setSearchQuery(newQuery);
+                  if (!newQuery.trim()) {
+                    if (searchOriginPortal === 'restaurant') {
+                      setActiveTab('restaurants');
+                    } else if (searchOriginPortal === 'stationery') {
+                      setActiveTab('stationery');
+                    } else {
+                      setActiveTab('home');
+                    }
+                  } else {
+                    setActiveTab('search');
+                  }
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              />
+            ) : activeTab === 'restaurants' ? (
               <CustomerRestaurantPortal
                 sellers={sellers}
                 products={products}
@@ -2709,7 +2962,7 @@ export default function App() {
               />
             ) : activeTab === 'categories' ? (
               <CategoriesView
-                products={products}
+                products={groceryProducts}
                 cartItems={cartItems}
                 bargainSessions={bargainSessions}
                 wishlistIds={wishlistIds}
@@ -2731,7 +2984,7 @@ export default function App() {
               <>
                 {/* Adaptive Time-of-Day Quick Storefront (Morning / Afternoon / Chai-Time / Midnight) */}
                 <TimeOfDayStorefront
-                  products={products}
+                  products={groceryProducts}
                   onAddToCart={handleAddToCart}
                   onSelectCategory={(cat) => {
                     setSelectedCategory(cat);
@@ -2745,7 +2998,7 @@ export default function App() {
 
                 {/* 100% FREE Item Deal: Any item <= ₹39 is ₹0 FREE on Min ₹199 order */}
                 <FlashDealOneRupee
-                  products={products}
+                  products={groceryProducts}
                   cartTotal={cartItems.reduce((acc, item) => {
                     const price = item.bargainedPrice || item.unitPrice || item.product.sellingPrice;
                     return acc + price * item.quantity;
@@ -2762,7 +3015,7 @@ export default function App() {
                   <CircularCategories
                     selectedCategory={selectedCategory}
                     title={resolveSiteText('Explore Categories', siteContent.categoriesHeading, siteContent)}
-                    badgeText={resolveSiteText('⚡ 10 Mins Delivery', siteContent.categoriesBadge, siteContent)}
+                    badgeText={resolveSiteText('⚡ 100% freshness your environment', siteContent.categoriesBadge, siteContent)}
                     onSelectCategory={(cat) => {
                       setSelectedCategory(cat);
                       setBargainOnly(false);
@@ -2774,6 +3027,21 @@ export default function App() {
                     showAllOption={true}
                   />
                 </div>
+
+                {/* Promotional Category Advertisement Banners (Live dynamic delivery threshold) */}
+                <CategoryAdvertisementBanners
+                  selectedCategory={selectedCategory}
+                  onSelectCategory={(cat) => {
+                    setSelectedCategory(cat);
+                    setBargainOnly(false);
+                    if (activeTab !== 'shop' && cat !== 'All') {
+                      setActiveTab('shop');
+                    }
+                  }}
+                  products={groceryProducts}
+                  onBargainClick={prod => setBargainProduct(prod)}
+                  freeDeliveryThreshold={featureFlags.freeDeliveryThreshold ?? 129}
+                />
 
                 {/* Clean Product Section Header */}
                 <div id="bargain-zone-section" className="space-y-3">
@@ -2818,8 +3086,8 @@ export default function App() {
                   <div className="space-y-6">
                     {/* Top Instant Delivery Highlights Shelf */}
                     <ProductShelf
-                      title="⚡ Top Picks in 10 Mins"
-                      badgeText="⚡ Fast 10m"
+                      title="🌿 100% Freshness Top Picks"
+                      badgeText="🌿 100% freshness your environment"
                       products={filteredProducts.slice(0, 16)}
                       cartItems={cartItems}
                       bargainSessions={bargainSessions}
@@ -2927,11 +3195,11 @@ export default function App() {
                     )}
 
                     {/* Bargain Eligible Items Shelf */}
-                    {products.filter(p => p.bargainingAllowed).length > 0 && (
+                    {groceryProducts.filter(p => p.bargainingAllowed).length > 0 && (
                       <ProductShelf
                         title="✨ Bazli Bargain Mandi Deals"
                         badgeText="🤝 Negotiable"
-                        products={products.filter(p => p.bargainingAllowed)}
+                        products={groceryProducts.filter(p => p.bargainingAllowed)}
                         cartItems={cartItems}
                         bargainSessions={bargainSessions}
                         wishlistIds={wishlistIds}
@@ -2946,53 +3214,29 @@ export default function App() {
                       />
                     )}
 
-                    {/* Complete All-Products Grid (Ensures 100% of catalog is visible on full scroll down) */}
-                    <div className="pt-6 space-y-3">
-                      <div className="flex items-center justify-between px-1">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-6 bg-[#0a192f] rounded-full"></span>
-                          <div>
-                            <h2 className="text-sm sm:text-base md:text-lg font-black text-slate-900 tracking-tight">
-                              🛒 Explore All Instant Essentials
-                            </h2>
-                            <p className="text-[11px] sm:text-xs text-slate-500 font-medium">
-                              Showing all {products.length} products available for 10-minute dispatch
-                            </p>
-                          </div>
-                        </div>
-                        <span className="text-[10px] sm:text-xs font-black text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
-                          {products.length} items
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-2.5 sm:gap-3.5">
-                        {products.map(product => (
-                          <div key={product.id} className="flex flex-col">
-                            <ProductCard
-                              product={product}
-                              bargainSession={bargainSessions[product.id]}
-                              onAddToCart={handleAddToCart}
-                              onBargainClick={prod => setBargainProduct(prod)}
-                              onOpenBargain={prod => setBargainProduct(prod)}
-                              onUpdateCartQty={(prod, qty, w) => handleUpdateCartQuantity(prod.id, qty, w)}
-                              cartQuantity={cartItems.find(i => i.product.id === product.id)?.quantity || 0}
-                              isWishlisted={wishlistIds.includes(product.id)}
-                              onToggleWishlist={handleToggleWishlist}
-                              isHighlighted={highlightedProductId === product.id}
-                              reviews={reviews}
-                              hasPurchased={hasPurchasedProduct(product.id)}
-                              onAddReview={handleAddReview}
-                              onOpenProductDetail={setSelectedDetailProduct}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                    {/* Complete All-Products Shelf (Swipe right/left horizontal carousel style like Munchies & Chips) */}
+                    <ProductShelf
+                      title="🛒 Explore All Instant Essentials"
+                      subtitle={`Showing all ${groceryProducts.length} products available with 100% freshness your environment`}
+                      badgeText="🌿 100% freshness your environment"
+                      products={groceryProducts}
+                      cartItems={cartItems}
+                      bargainSessions={bargainSessions}
+                      wishlistIds={wishlistIds}
+                      onToggleWishlist={handleToggleWishlist}
+                      onAddToCart={handleAddToCart}
+                      onBargainClick={prod => setBargainProduct(prod)}
+                      onUpdateCartQty={(prod, qty, w) => handleUpdateCartQuantity(prod.id, qty, w)}
+                      reviews={reviews}
+                      hasPurchasedProduct={hasPurchasedProduct}
+                      onAddReview={handleAddReview}
+                      onOpenProductDetail={setSelectedDetailProduct}
+                    />
 
                     {/* Innovative 1-Click Smart Meal Kits & Recipe Bundler (Positioned at the very bottom) */}
                     <div className="pt-8 border-t border-[#ded2bc]/60">
                       <SmartRecipeKits
-                        products={products}
+                        products={groceryProducts}
                         onAddRecipeKitToCart={handleAddRecipeKitToCart}
                         onOpenProductDetail={setSelectedDetailProduct}
                       />
@@ -3267,310 +3511,361 @@ export default function App() {
 
       </main>
 
-      {/* Footer Features Banner */}
-      <footer className={`mt-auto transition-colors duration-300 ${
+      {/* Compact Horizontal Tabular-Form Footer (Low Vertical Scroll, Structured Matrix) */}
+      <footer className={`mt-auto transition-colors duration-300 relative overflow-hidden border-t ${
         isRestaurantMode
-          ? 'bg-[#521308] text-orange-200 border-t border-[#6e190b]'
-          : 'bg-[#0a192f] text-slate-300 border-t border-[#1e3a5f]'
+          ? 'bg-[#2a0703] text-orange-100 border-[#6e190b]'
+          : 'bg-[#050e1c] text-slate-200 border-[#132c4e]'
       }`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 text-xs">
+        {/* Subtle Ambient Radial Glow */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-16 bg-gradient-to-b from-amber-500/10 via-transparent to-transparent pointer-events-none blur-2xl" />
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4 relative z-10 space-y-3">
           
-          {/* Card 1: Contact Us Information (Helpline & Email & Bazli Assistant) */}
-          <div className={`p-4 rounded-2xl border transition-colors space-y-3 ${
+          {/* Row 1: Horizontal Highlights & Trust Guarantee Ribbon (Single Inline Strip) */}
+          <div className={`p-2.5 rounded-2xl border flex flex-wrap items-center justify-between gap-3 text-xs ${
             isRestaurantMode
-              ? 'bg-[#69180b] border-[#85200e]'
-              : 'bg-[#10243e] border-[#1e3a5f]'
+              ? 'bg-[#3b0d06]/80 border-[#6e190b]'
+              : 'bg-[#0a182e]/80 border-[#18365f]'
           }`}>
-            <div className="flex items-center space-x-3">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                isRestaurantMode ? 'bg-orange-500/20 text-orange-300' : 'bg-amber-500/20 text-amber-400'
-              }`}>
-                <PhoneCall className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <h4 className="font-bold text-white text-sm">Contact Us</h4>
-                <p className="text-white font-semibold text-xs mt-0.5">
-                  📞 <a href="tel:9871618126" className="hover:underline text-amber-300">9871618126</a>
-                </p>
-                <p className={`text-[11px] truncate mt-0.5 ${isRestaurantMode ? 'text-orange-200/90' : 'text-slate-300'}`}>
-                  ✉️ <a href="mailto:sahotraakash3008@gmail.com" className="hover:underline">sahotraakash3008@gmail.com</a>
-                </p>
-              </div>
-            </div>
-            {/* Bazli AI Assistant & WhatsApp Support in Footer as requested */}
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setIsAssistantOpen(true)}
-                className="flex items-center justify-center space-x-1.5 py-2.5 px-2 rounded-xl font-extrabold text-xs bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-slate-950 shadow-md active:scale-95 transition-all cursor-pointer"
-                title="Ask Bazli AI Assistant"
-              >
-                <Bot className="w-4 h-4 text-slate-950 shrink-0" />
-                <span className="truncate">Bazli AI</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsWhatsAppOpen(true)}
-                className="flex items-center justify-center space-x-1.5 py-2.5 px-2 rounded-xl font-extrabold text-xs bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-md active:scale-95 transition-all cursor-pointer border border-emerald-400/30"
-                title="Chat on WhatsApp (+91 9871618126)"
-              >
-                <MessageCircle className="w-4 h-4 fill-white text-emerald-600 shrink-0" />
-                <span className="truncate">WhatsApp</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Card 2: Fresh & Verified */}
-          <div className={`flex items-center space-x-3 p-4 rounded-2xl border transition-colors ${
-            isRestaurantMode
-              ? 'bg-[#69180b] border-[#85200e]'
-              : 'bg-[#10243e] border-[#1e3a5f]'
-          }`}>
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-              isRestaurantMode ? 'bg-orange-500/20 text-orange-300' : 'bg-amber-500/20 text-amber-400'
-            }`}>
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="font-bold text-white text-sm">Fresh & Verified</h4>
-              <p className={isRestaurantMode ? 'text-orange-200/70 text-[11px]' : 'text-slate-400 text-[11px]'}>
-                {isRestaurantMode ? '100% genuine restaurant kitchens & dining' : '100% genuine local stores & dark stores'}
-              </p>
-            </div>
-          </div>
-
-          {/* Card 3: Live Price Bargaining (Groceries Only) or Chef Prepared Meals (Restaurant) */}
-          {isRestaurantMode ? (
-            <div className="flex items-center space-x-3 p-4 rounded-2xl border transition-colors bg-[#69180b] border-[#85200e]">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-orange-500/20 text-orange-300">
-                <UtensilsCrossed className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="font-bold text-white text-sm">Chef Prepared Dining</h4>
-                <p className="text-orange-200/70 text-[11px]">Hot & authentic meals from top rated local restaurants</p>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center space-x-3 p-4 rounded-2xl border transition-colors bg-[#10243e] border-[#1e3a5f]">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-amber-500/20 text-amber-400">
-                <Sparkles className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="font-bold text-white text-sm">Live Price Bargaining</h4>
-                <p className="text-slate-400 text-[11px]">Make offers & negotiate prices on grocery essentials</p>
-              </div>
-            </div>
-          )}
-
-          {/* Card 4: Connect as Delivery Partner */}
-          <div className={`flex items-center space-x-3 p-4 rounded-2xl border transition-colors ${
-            isRestaurantMode
-              ? 'bg-[#69180b] border-[#85200e]'
-              : 'bg-[#10243e] border-[#1e3a5f]'
-          }`}>
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-              isRestaurantMode ? 'bg-orange-500/20 text-orange-300' : 'bg-amber-500/20 text-amber-400'
-            }`}>
-              <Bike className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="font-bold text-white text-sm">Connect as Delivery Rider</h4>
-              <p className={isRestaurantMode ? 'text-orange-200/70 text-[11px]' : 'text-slate-400 text-[11px]'}>Digital KYC, flexible shifts & payouts</p>
-            </div>
-          </div>
-
-        </div>
-
-        {/* Contact info highlight & Quick Navigation Bar */}
-        <div className={`border-t py-4 text-[11px] px-4 max-w-7xl mx-auto transition-colors ${
-          isRestaurantMode
-            ? 'border-[#6e190b] text-orange-200/80'
-            : 'border-[#1e3a5f] text-slate-400'
-        }`}>
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
-            <div className="flex flex-wrap items-center justify-center sm:justify-start space-x-3">
-              <button
-                onClick={handleGoHome}
-                className={`font-bold transition-colors cursor-pointer text-white flex items-center gap-1.5 ${
-                  isRestaurantMode ? 'hover:text-orange-300' : 'hover:text-amber-400'
-                }`}
-              >
-                <img
-                  src="/bazli-logo.jpg?v=2"
-                  alt="Bazli Logo"
-                  className="w-5 h-5 rounded-full object-cover border-2 border-yellow-400 p-0.2 shrink-0"
-                />
-                <span>Bazli<span className={isRestaurantMode ? 'text-orange-400' : 'text-amber-400'}>{isRestaurantMode ? ' Restaurant' : ''}</span></span>
-              </button>
-              <span className={isRestaurantMode ? 'text-orange-900' : 'text-slate-600'}>|</span>
-              <button
-                onClick={handleGoHome}
-                className={`font-medium transition-colors cursor-pointer ${
-                  isRestaurantMode ? 'hover:text-orange-300' : 'hover:text-amber-400'
-                }`}
-              >
-                Home
-              </button>
-              <button
-                onClick={handleGoToShop}
-                className={`font-medium transition-colors cursor-pointer ${
-                  isRestaurantMode ? 'hover:text-orange-300' : 'hover:text-amber-400'
-                }`}
-              >
-                Shop All
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab('categories');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                className={`font-medium transition-colors cursor-pointer ${
-                  isRestaurantMode ? 'hover:text-orange-300' : 'hover:text-amber-400'
-                }`}
-              >
-                Categories
-              </button>
-              <button
-                onClick={handleSelectTodaysDeals}
-                className={`font-medium transition-colors cursor-pointer ${
-                  isRestaurantMode ? 'hover:text-orange-300' : 'hover:text-amber-400'
-                }`}
-              >
-                Today's Deals
-              </button>
-              {!isRestaurantMode && (
-                <button
-                  onClick={handleGoToBargainZone}
-                  className="font-medium transition-colors cursor-pointer hover:text-amber-400"
-                >
-                  Bargain & Save
-                </button>
-              )}
-              <span className={isRestaurantMode ? 'text-orange-900' : 'text-slate-600'}>|</span>
-              <button
-                onClick={() => {
-                  if (authenticatedSeller) {
-                    setCurrentRole('seller');
-                    setActiveTab('seller');
-                  } else {
-                    handleOpenSellerAuth();
-                  }
-                }}
-                className={`font-bold transition-colors cursor-pointer flex items-center gap-1 ${
-                  isRestaurantMode ? 'text-orange-300 hover:text-white' : 'text-amber-400 hover:text-amber-300'
-                }`}
-                title="Seller Portal - Business Name & Admin OTP Protected"
-              >
-                <Store className="w-3 h-3" />
-                <span>Seller Portal</span>
-              </button>
-              <span className={isRestaurantMode ? 'text-orange-900' : 'text-slate-600'}>|</span>
-              <button
-                onClick={() => {
-                  if (isAdminAuthenticated || authenticatedDeliveryPartner) {
-                    setCurrentRole('delivery');
-                    setActiveTab('delivery');
-                  } else {
-                    handleOpenDeliveryAuth();
-                  }
-                }}
-                className={`font-bold transition-colors cursor-pointer flex items-center gap-1 ${
-                  isRestaurantMode ? 'text-orange-300 hover:text-white' : 'text-sky-400 hover:text-sky-300'
-                }`}
-                title="Delivery Fleet Portal (Registered Partners & Admin Only)"
-              >
-                <Bike className="w-3 h-3" />
-                <span>Delivery Fleet 🔒</span>
-              </button>
-              <span className={isRestaurantMode ? 'text-orange-900' : 'text-slate-600'}>|</span>
-              <button
-                onClick={() => setIsDeliveryRegisterOpen(true)}
-                className={`font-bold transition-colors cursor-pointer flex items-center gap-1 ${
-                  isRestaurantMode ? 'text-orange-300 hover:text-white' : 'text-amber-400 hover:text-amber-300'
-                }`}
-              >
-                <Bike className="w-3 h-3" />
-                <span>Join as Delivery Partner</span>
-              </button>
-              <span className={isRestaurantMode ? 'text-orange-900' : 'text-slate-600'}>|</span>
-              <button
-                onClick={() => {
-                  if (isAdminAuthenticated) {
-                    setCurrentRole('admin');
-                    setActiveTab('admin');
-                  } else {
-                    handleOpenAdminAuth();
-                  }
-                }}
-                className="hover:text-amber-300 font-bold text-amber-400 transition-colors cursor-pointer flex items-center gap-1"
-                title="Confidential Admin Portal - Passcode Protected"
-              >
-                <Lock className="w-3 h-3" />
-                <span>Admin Console</span>
-              </button>
-            </div>
-
-            <div className="text-[11px] text-slate-300">
-              📞 Helpline: <a href="tel:9871618126" className="text-amber-400 font-bold hover:underline">9871618126</a> &nbsp;|&nbsp; ✉️ <a href="mailto:sahotraakash3008@gmail.com" className="text-amber-300 hover:underline">sahotraakash3008@gmail.com</a>
-            </div>
-          </div>
-
-          {/* Legal Policies & Mandatory Regulatory Bar (Required for Razorpay & Bank Settlement) */}
-          <div className="mt-4 pt-4 border-t border-slate-700/60 flex flex-wrap items-center justify-between gap-3 text-[11px]">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-slate-300 font-semibold">
-              <span className="text-amber-400 font-extrabold uppercase tracking-wider text-[10px] flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                Legal & Policies:
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-3.5 h-3.5" />
               </span>
-              <button
-                type="button"
-                onClick={() => handleOpenLegalModal('terms')}
-                className="hover:text-amber-300 transition-colors cursor-pointer underline-offset-2 hover:underline"
-              >
-                Terms of Use
-              </button>
-              <button
-                type="button"
-                onClick={() => handleOpenLegalModal('privacy')}
-                className="hover:text-amber-300 transition-colors cursor-pointer underline-offset-2 hover:underline"
-              >
-                Privacy Policy
-              </button>
-              <button
-                type="button"
-                onClick={() => handleOpenLegalModal('refund')}
-                className="hover:text-amber-300 transition-colors cursor-pointer underline-offset-2 hover:underline"
-              >
-                Refund & Cancellation
-              </button>
-              <button
-                type="button"
-                onClick={() => handleOpenLegalModal('shipping')}
-                className="hover:text-amber-300 transition-colors cursor-pointer underline-offset-2 hover:underline"
-              >
-                Shipping & Delivery
-              </button>
-              <button
-                type="button"
-                onClick={() => handleOpenLegalModal('contact')}
-                className="hover:text-amber-300 transition-colors cursor-pointer underline-offset-2 hover:underline text-emerald-400 font-bold"
-              >
-                Contact & Grievance
-              </button>
-            </div>
-
-            <div className="text-[10px] text-slate-400 flex items-center gap-2">
-              <span className="bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded font-mono border border-emerald-500/30">
-                🔒 256-Bit SSL • PCI-DSS Razorpay
+              <span className="font-freshness font-extrabold text-white text-xs tracking-tight">
+                {isRestaurantMode ? '100% Hygienic Dining' : '100% Freshness Guarantee'}
               </span>
-              <span className="hidden sm:inline">Grievance: Akash Sahotra</span>
+              <span className="hidden sm:inline text-slate-400 text-[11px]">• Handpicked Farm Fresh</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                <Zap className="w-3.5 h-3.5 fill-current" />
+              </span>
+              <span className="font-freshness font-extrabold text-white text-xs tracking-tight">
+                {isRestaurantMode ? 'Hot Food Express' : 'Lightning Dispatch'}
+              </span>
+              <span className="hidden sm:inline text-slate-400 text-[11px]">• Doorstep within mins</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-yellow-500/20 text-yellow-300 flex items-center justify-center shrink-0">
+                <Sparkles className="w-3.5 h-3.5" />
+              </span>
+              <span className="font-freshness font-extrabold text-white text-xs tracking-tight">
+                {isRestaurantMode ? 'Chef Specials' : 'Live Mandi Bargain'}
+              </span>
+              <span className="hidden sm:inline text-slate-400 text-[11px]">• AI Price Negotiation</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-300 flex items-center justify-center shrink-0">
+                <Lock className="w-3.5 h-3.5" />
+              </span>
+              <span className="font-freshness font-extrabold text-white text-xs tracking-tight">
+                256-Bit SSL Secured
+              </span>
+              <span className="hidden sm:inline text-slate-400 text-[11px]">• PCI-DSS Instant UPI</span>
             </div>
           </div>
 
-          <div className="mt-3 text-center text-[10px] opacity-75">
-            © {new Date().getFullYear()} {isRestaurantMode ? 'Bazli Restaurant — Food & Dining Delivery' : 'Bazli — Hyperlocal Grocery & Live Price Bargaining Platform'}. All rights reserved. Compliant with Consumer Protection (E-Commerce) Rules 2020.
+          {/* Row 2: Horizontal Tabular-Form Matrix (Structured Cells, Side-by-Side) */}
+          <div className={`rounded-2xl border overflow-hidden ${
+            isRestaurantMode
+              ? 'bg-[#350a04]/90 border-[#6e190b]'
+              : 'bg-[#081528]/90 border-[#18365f]'
+          }`}>
+            <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-white/10">
+              
+              {/* Cell 1: Brand Header + Bazli AI & WhatsApp + Live Helpline (Span 4 cols) */}
+              <div className="lg:col-span-4 p-3.5 sm:p-4 flex flex-col justify-between gap-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <img
+                      src="/bazli-logo.jpg?v=2"
+                      alt="Bazli Logo"
+                      className="w-8 h-8 rounded-xl object-cover border border-amber-400 p-0.5 shadow-sm shrink-0"
+                    />
+                    <div>
+                      <div className="flex items-center gap-1.5 leading-none">
+                        <span className="text-base font-black text-white tracking-tight">BAZLI</span>
+                        {isRestaurantMode && (
+                          <span className="bg-orange-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase">
+                            Dining
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-bold text-amber-300 tracking-tight font-freshness block mt-0.5">
+                        100% freshness your environment
+                      </span>
+                    </div>
+
+                    {/* Social Media Follow Icons next to Bazli Logo */}
+                    <div className="flex items-center gap-1.5 pl-2 border-l border-white/15 ml-1 shrink-0">
+                      <a
+                        href="https://instagram.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label="Follow Bazli on Instagram"
+                        title="Follow Bazli on Instagram"
+                        className="w-6 h-6 rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 hover:brightness-110 text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-xs border border-white/10"
+                      >
+                        <Instagram className="w-3.5 h-3.5" />
+                      </a>
+                      <a
+                        href="https://facebook.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label="Follow Bazli on Facebook"
+                        title="Follow Bazli on Facebook"
+                        className="w-6 h-6 rounded-lg bg-[#1877F2] hover:bg-[#166fe5] text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-xs border border-white/10"
+                      >
+                        <Facebook className="w-3.5 h-3.5" />
+                      </a>
+                      <a
+                        href="https://twitter.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label="Follow Bazli on Twitter"
+                        title="Follow Bazli on Twitter"
+                        className="w-6 h-6 rounded-lg bg-[#1DA1F2] hover:bg-[#0c85d0] text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-xs border border-white/10"
+                      >
+                        <Twitter className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Helpline badge */}
+                  <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1 shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Live Support
+                  </span>
+                </div>
+
+                {/* Instant Action Strip: Bazli AI Bot & WhatsApp */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAssistantOpen(true)}
+                    className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl font-black text-xs bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-slate-950 shadow-md shadow-amber-500/10 active:scale-95 transition-all cursor-pointer border border-amber-300"
+                  >
+                    <Bot className="w-3.5 h-3.5 text-slate-950 shrink-0" />
+                    <span>Bazli AI Bot</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsWhatsAppOpen(true)}
+                    className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl font-black text-xs bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-md shadow-emerald-500/10 active:scale-95 transition-all cursor-pointer border border-emerald-400/40"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5 fill-white text-emerald-600 shrink-0" />
+                    <span>WhatsApp</span>
+                  </button>
+                </div>
+
+                {/* Direct Contact Links */}
+                <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-300/90 pt-1 border-t border-white/5">
+                  <span className="flex items-center gap-1.5">
+                    <PhoneCall className="w-3 h-3 text-amber-400" />
+                    <span>Call:</span>
+                    <a href="tel:9871618126" className="text-amber-300 font-bold hover:underline">
+                      +91 9871618126
+                    </a>
+                  </span>
+                  <span className="text-slate-400 truncate">
+                    <a href="mailto:sahotraakash3008@gmail.com" className="hover:text-white hover:underline truncate">
+                      sahotraakash3008@gmail.com
+                    </a>
+                  </span>
+                </div>
+              </div>
+
+              {/* Cell 2: Explore & Shop (Span 3 cols, Tabular Inline List) */}
+              <div className="lg:col-span-3 p-3.5 sm:p-4 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider text-amber-400 pb-1 border-b border-white/10">
+                  <span className="flex items-center gap-1.5">
+                    <ShoppingBag className="w-3.5 h-3.5" /> Explore Store
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal lowercase">browse fast</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 pt-1 text-xs">
+                  <button
+                    onClick={handleGoHome}
+                    className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-200 hover:text-amber-300 transition-colors cursor-pointer text-[11px] font-semibold border border-white/10"
+                  >
+                    🏠 Home
+                  </button>
+                  <button
+                    onClick={handleGoToShop}
+                    className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-200 hover:text-amber-300 transition-colors cursor-pointer text-[11px] font-semibold border border-white/10"
+                  >
+                    🛒 Shop All
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveTab('categories');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-200 hover:text-amber-300 transition-colors cursor-pointer text-[11px] font-semibold border border-white/10"
+                  >
+                    📑 Categories
+                  </button>
+                  <button
+                    onClick={handleSelectTodaysDeals}
+                    className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-200 hover:text-amber-300 transition-colors cursor-pointer text-[11px] font-semibold border border-white/10"
+                  >
+                    🔥 Today's Deals
+                  </button>
+                  {!isRestaurantMode && (
+                    <button
+                      onClick={handleGoToBargainZone}
+                      className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 hover:text-amber-200 font-bold transition-colors cursor-pointer text-[11px] border border-amber-400/30 flex items-center gap-1"
+                    >
+                      <Sparkles className="w-3 h-3 text-amber-400" />
+                      <span>Live Mandi Bargain</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Cell 3: Partner Hub (Span 2 or 3 cols, Tabular Inline List) */}
+              <div className="lg:col-span-2 p-3.5 sm:p-4 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider text-amber-400 pb-1 border-b border-white/10">
+                  <span className="flex items-center gap-1.5">
+                    <Store className="w-3.5 h-3.5" /> Partner Hub
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal lowercase">portals</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 pt-1 text-xs">
+                  <button
+                    onClick={() => {
+                      if (authenticatedSeller) {
+                        setCurrentRole('seller');
+                        setActiveTab('seller');
+                      } else {
+                        handleOpenSellerAuth();
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-950/40 hover:bg-amber-900/60 text-amber-200 font-bold transition-colors cursor-pointer text-[11px] border border-amber-500/30 flex items-center gap-1"
+                  >
+                    <Store className="w-3 h-3" />
+                    <span>Seller Portal 🔒</span>
+                  </button>
+
+                  <button
+                    onClick={() => setIsDeliveryRegisterOpen(true)}
+                    className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-200 hover:text-amber-300 transition-colors cursor-pointer text-[11px] font-semibold border border-white/10"
+                  >
+                    🚴 Join Fleet
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      if (isAdminAuthenticated || authenticatedDeliveryPartner) {
+                        setCurrentRole('delivery');
+                        setActiveTab('delivery');
+                      } else {
+                        handleOpenDeliveryAuth();
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-sky-950/40 hover:bg-sky-900/60 text-sky-300 transition-colors cursor-pointer text-[11px] font-bold border border-sky-500/30 flex items-center gap-1"
+                  >
+                    <Bike className="w-3 h-3 text-sky-400" />
+                    <span>Fleet Portal 🔒</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      if (isAdminAuthenticated) {
+                        setCurrentRole('admin');
+                        setActiveTab('admin');
+                      } else {
+                        handleOpenAdminAuth();
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold transition-colors cursor-pointer text-[11px] border border-amber-500/40 flex items-center gap-1"
+                  >
+                    <Lock className="w-3 h-3 text-amber-400" />
+                    <span>Admin Console 🔒</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Cell 4: Legal & Policies (Span 3 cols, Tabular Inline List) */}
+              <div className="lg:col-span-3 p-3.5 sm:p-4 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider text-amber-400 pb-1 border-b border-white/10">
+                  <span className="flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5" /> Legal & Policies
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal lowercase">compliant</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 pt-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenLegalModal('terms')}
+                    className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-200 hover:text-amber-300 transition-colors cursor-pointer text-[11px] border border-white/10"
+                  >
+                    📜 Terms of Service
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenLegalModal('privacy')}
+                    className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-200 hover:text-amber-300 transition-colors cursor-pointer text-[11px] border border-white/10"
+                  >
+                    🔒 Privacy Policy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenLegalModal('refund')}
+                    className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-200 hover:text-amber-300 transition-colors cursor-pointer text-[11px] border border-white/10"
+                  >
+                    💸 Refund Policy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenLegalModal('shipping')}
+                    className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-200 hover:text-amber-300 transition-colors cursor-pointer text-[11px] border border-white/10"
+                  >
+                    ⚡ Delivery Terms
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenLegalModal('contact')}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 font-bold transition-colors cursor-pointer text-[11px] border border-emerald-500/30 flex items-center gap-1"
+                  >
+                    📞 Grievance Redressal
+                  </button>
+                </div>
+              </div>
+
+            </div>
           </div>
+
+          {/* Row 3: Ultra-Compact Bottom Regulatory & Security Strip (Single Line) */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-400 py-1 px-1">
+            <div className="flex flex-wrap items-center gap-1.5 text-center sm:text-left">
+              <span>© {new Date().getFullYear()} Bazli. All rights reserved.</span>
+              <span className="hidden sm:inline text-slate-600">•</span>
+              <span className="text-slate-400 text-[10px]">
+                Consumer Protection (E-Commerce) Rules 2020 Compliant • Grievance: Akash Sahotra
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-emerald-400 text-[10px] font-mono flex items-center gap-1">
+                <Lock className="w-2.5 h-2.5" /> 256-Bit SSL
+              </span>
+              <span className="text-slate-600">•</span>
+              <span className="text-amber-300 text-[10px] font-bold">
+                PCI-DSS Razorpay
+              </span>
+              <span className="text-slate-600">•</span>
+              <span className="text-slate-300 text-[10px]">
+                🇮🇳 India
+              </span>
+            </div>
+          </div>
+
         </div>
       </footer>
 
@@ -3695,7 +3990,8 @@ export default function App() {
         onApplyCoupon={handleApplyCoupon}
         onRemoveCoupon={handleRemoveCoupon}
         userCoins={userCoins}
-        selectedZone={APP_ZONES[0]}
+        selectedZone={currentSelectedZone}
+        platformFee={featureFlags.platformFee ?? 0}
         isFirstOrder={orders.filter(o => o.customerId === 'c1' || o.customerId === 'CUST-8831').length < 2 || loyaltyTier === 'New'}
         orderCount={orders.filter(o => o.customerId === 'c1' || o.customerId === 'CUST-8831').length}
         isVipMember={loyaltyTier === 'VIP' || !!customerProfile.isVipMember}
@@ -3740,7 +4036,8 @@ export default function App() {
           isVipMember: loyaltyTier === 'VIP' || !!customerProfile.isVipMember,
           savedAddresses
         }}
-        selectedZone={APP_ZONES[0]}
+        selectedZone={currentSelectedZone}
+        platformFee={featureFlags.platformFee ?? 0}
         appliedCouponCode={appliedCoupon?.code}
         couponDiscount={couponDiscount}
         isFirstOrder={orders.filter(o => o.customerId === 'c1' || o.customerId === 'CUST-8831').length < 2 || loyaltyTier === 'New'}
@@ -3844,6 +4141,10 @@ export default function App() {
           setTrackingOrder(orderToTrack);
           setIsTrackingModalOpen(true);
         }}
+        onRateOrder={(orderToRate) => {
+          setReviewingOrder(orderToRate);
+          setIsReviewModalOpen(true);
+        }}
       />
 
       {/* Live Order Tracking Modal with GPS Delivery Partner Movement */}
@@ -3852,6 +4153,15 @@ export default function App() {
         onClose={() => setIsTrackingModalOpen(false)}
         order={trackingOrder || orders.find(o => o.orderStatus !== 'Delivered') || orders[0] || null}
         onUpdateOrderStatus={handleUpdateOrderStatus}
+        onSubmitOrderReview={handleOrderReview}
+      />
+
+      {/* Customer Post-Delivery Experience & Star Rating Modal */}
+      <OrderReviewModal
+        isOpen={isReviewModalOpen}
+        onClose={() => setIsReviewModalOpen(false)}
+        order={reviewingOrder || latestUnratedDeliveredOrder || null}
+        onSubmitReview={handleOrderReview}
       />
 
       {/* VIP Gold Pass Club Modal */}
@@ -3907,54 +4217,6 @@ export default function App() {
             />
           </div>
         )}
-
-        {/* Active Order Live Tracking Chip */}
-        {activeFloatingOrder && !isTrackingModalOpen && (
-          <div className="pointer-events-auto w-full animate-in slide-in-from-bottom-4">
-            <button
-              onClick={() => {
-                setTrackingOrder(activeFloatingOrder);
-                setIsTrackingModalOpen(true);
-              }}
-              className="w-full bg-slate-950/95 hover:bg-slate-900 text-white p-2.5 sm:p-3 pr-3.5 sm:pr-4 rounded-2xl shadow-2xl border border-emerald-500/60 flex items-center gap-2.5 sm:gap-3 transition-all cursor-pointer backdrop-blur-md hover:scale-[1.02] active:scale-95 glow-emerald"
-            >
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center relative shrink-0 border border-emerald-500/30">
-                <Bike className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-400 absolute -top-0.5 -right-0.5 animate-ping" />
-              </div>
-              <div className="text-left min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 truncate">
-                  <span className="text-[9px] sm:text-[10px] uppercase font-black tracking-wider text-amber-400 truncate">
-                    Live Delivery #{activeFloatingOrder.id}
-                  </span>
-                  <span className="bg-emerald-500/20 text-emerald-300 text-[8px] sm:text-[9px] font-bold px-1.5 py-0.2 rounded-full shrink-0 border border-emerald-500/30">
-                    GPS LIVE
-                  </span>
-                </div>
-                <div className="text-[11px] sm:text-xs font-bold text-slate-100 flex items-center gap-1 truncate">
-                  <span className="truncate">{activeFloatingOrder.deliveryPartnerName ? activeFloatingOrder.deliveryPartnerName.split(' ')[0] : 'Rider'} arriving soon</span>
-                  <span className="text-emerald-400 font-extrabold shrink-0">• Track 📍</span>
-                </div>
-              </div>
-            </button>
-          </div>
-        )}
-
-        {/* Floating VIP Gold Pass Prompt (Symbol with 15-second bounce) */}
-        {currentRole === 'customer' && (
-          <div className="pointer-events-auto animate-in slide-in-from-bottom-4 vip-bounce-15s">
-            <button
-              onClick={() => setIsBazliPassModalOpen(true)}
-              className="vip-gold-shimmer hover:brightness-110 text-slate-950 p-2 sm:p-2.5 rounded-full shadow-2xl border-2 border-amber-300 flex items-center justify-center cursor-pointer transition-all hover:scale-110 active:scale-95 group glow-gold-intense"
-              title={loyaltyTier === 'VIP' ? "Bazli VIP Member (Active)" : "Bazli VIP Club"}
-              aria-label="Bazli VIP Club"
-            >
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-950 text-amber-400 flex items-center justify-center shrink-0 shadow-xs">
-                <Crown className="w-4 h-4 sm:w-4.5 sm:h-4.5 fill-current group-hover:rotate-12 transition-transform" />
-              </div>
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Mobile Bottom Navigation Bar (Customer View) */}
@@ -3965,7 +4227,7 @@ export default function App() {
         wishlistCount={wishlistIds.length}
         onOpenWishlist={() => setIsWishlistOpen(true)}
         cartCount={cartItems.reduce((sum, item) => sum + item.quantity, 0)}
-        cartSubtotal={cartItems.reduce((sum, item) => sum + (item.product.price * item.quantity), 0)}
+        cartSubtotal={cartItems.reduce((sum, item) => sum + ((item.bargainedPrice ?? item.unitPrice ?? item.product.sellingPrice) * item.quantity), 0)}
         onOpenCart={() => setIsCartOpen(true)}
         onOpenParchhiScanner={() => setIsParchhiScannerOpen(true)}
       />
@@ -3978,6 +4240,13 @@ export default function App() {
         isWhatsAppOpen={isWhatsAppOpen}
         onToggleWhatsApp={setIsWhatsAppOpen}
       />
+
+      {/* Animated Fullscreen Splash Screen with Warm Beige Canvas, Blinkit/Zepto Logo entrance & Swipe-Left exit, and Algerian Flutter Tagline */}
+      {showSplash && (
+        <SplashScreen
+          onComplete={handleSplashComplete}
+        />
+      )}
 
     </div>
   );
