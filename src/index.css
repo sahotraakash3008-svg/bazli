@@ -1,5 +1,25 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --default-font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Unique distinctive typography specifically for "100% freshness your environment" */
+.font-freshness {
+  font-family: 'Unbounded', 'Syne', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+  letter-spacing: -0.015em;
+  font-feature-settings: normal !important;
+}
+
+/* Algerian typography with Cinzel Decorative fallback for "Why other when here is your brother" */
+.font-algerian {
+  font-family: 'Algerian', 'Cinzel Decorative', 'Cinzel', 'Playfair Display', 'Times New Roman', serif !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
 @layer base {
   html, body {
     width: 100%;
@@ -11,7 +31,17 @@
     box-sizing: border-box;
     background-color: #fbf9f5;
     color: #0a192f;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    letter-spacing: -0.012em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
+  }
+
+  button, input, select, textarea, optgroup {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    letter-spacing: inherit;
   }
 
   #root {
@@ -20,6 +50,7 @@
     overflow-x: hidden;
     min-height: 100vh;
     background-color: #fbf9f5;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   }
 
   *, *::before, *::after {
@@ -526,63 +557,26 @@
 }
 
 /* ==========================================================================
-   BAZLI VIP LOGO 15-SECOND BOUNCE ANIMATION
-   Bounces dynamically in place every 15 seconds with squash-and-stretch,
-   playful angle tilt, golden crest jump, and damped settle.
+   BAZLI ATMOSPHERIC AMBIENCE & ELEVATED STYLING
    ========================================================================== */
 
-@keyframes vipBounce15s {
-  0%, 84% {
-    transform: translateY(0) scale(1) rotate(0deg);
-    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
-  }
-  86% {
-    /* Crouch / compression anticipation */
-    transform: translateY(3px) scale(1.12, 0.88) rotate(-3deg);
-  }
-  88.5% {
-    /* Upward spring launch */
-    transform: translateY(-16px) scale(0.9, 1.12) rotate(6deg);
-    filter: drop-shadow(0 14px 18px rgba(245, 158, 11, 0.7));
-  }
-  91% {
-    /* Apex jump peak with gold crown brilliance */
-    transform: translateY(-24px) scale(1.06, 1.02) rotate(-4deg);
-    filter: drop-shadow(0 18px 24px rgba(245, 158, 11, 0.9));
-  }
-  93.5% {
-    /* Landing impact squash */
-    transform: translateY(1.5px) scale(1.14, 0.86) rotate(0deg);
-    filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4));
-  }
-  95.5% {
-    /* Secondary playful rebound */
-    transform: translateY(-9px) scale(0.96, 1.05) rotate(3deg);
-    filter: drop-shadow(0 10px 14px rgba(245, 158, 11, 0.5));
-  }
-  97.5% {
-    /* Soft touch down */
-    transform: translateY(0px) scale(1.04, 0.96) rotate(0deg);
-  }
-  99% {
-    /* Micro dampening */
-    transform: translateY(-2px) scale(1) rotate(0deg);
-  }
-  100% {
-    /* Rest settled */
-    transform: translateY(0) scale(1) rotate(0deg);
-    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
-  }
+.ambient-surface {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
 }
 
-.vip-bounce-15s {
-  animation: vipBounce15s 15s cubic-bezier(0.28, 0.84, 0.42, 1) infinite !important;
-  transform-origin: bottom center !important;
-  will-change: transform, filter !important;
+.ambient-surface-dark {
+  background: rgba(10, 25, 47, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-.vip-bounce-15s:active {
-  transform: scale(0.92) !important;
+.ambient-glow-subtle {
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.06), 0 4px 12px -2px rgba(0, 0, 0, 0.03);
 }
+
 
 
