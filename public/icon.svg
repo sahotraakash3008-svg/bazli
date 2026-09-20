@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bazliGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a192f"/>
+      <stop offset="100%" stop-color="#020c1b"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="50%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded rect -->
+  <rect width="512" height="512" rx="128" fill="url(#bazliGrad)"/>
+  <rect width="504" height="504" x="4" y="4" rx="124" fill="none" stroke="url(#goldGrad)" stroke-width="8" stroke-opacity="0.8"/>
+
+  <!-- Glowing Aura -->
+  <circle cx="256" cy="240" r="160" fill="#f59e0b" opacity="0.12" filter="blur(20px)"/>
+
+  <!-- Golden Bag / Cart Monogram 'B' -->
+  <path d="M170 140 H300 C345 140 375 165 375 205 C375 235 355 255 325 265 C365 275 390 305 390 345 C390 395 345 425 290 425 H170 Z" fill="url(#goldGrad)"/>
+  
+  <!-- Cutouts to form letter B -->
+  <rect x="235" y="180" width="75" height="45" rx="12" fill="#0a192f"/>
+  <rect x="235" y="295" width="85" height="55" rx="14" fill="#0a192f"/>
+
+  <!-- Fast Delivery Lightning Bolt in Emerald -->
+  <path d="M370 120 L310 240 H380 L320 370 L430 220 H360 Z" fill="url(#emeraldGrad)" stroke="#ffffff" stroke-width="6"/>
+
+  <!-- 10-Min Express Badge -->
+  <rect x="140" y="435" width="232" height="42" rx="21" fill="#10b981"/>
+  <text x="256" y="462" fill="#ffffff" font-family="system-ui, sans-serif" font-weight="900" font-size="20" text-anchor="middle" letter-spacing="1">10-MIN EXPRESS</text>
+</svg>

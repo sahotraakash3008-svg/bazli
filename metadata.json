@@ -1,0 +1,6 @@
+{
+  "name": "Bazli",
+  "description": "Online grocery and daily-essentials delivery platform with 100% freshness your environment, live price bargaining, and Bazli handwritten list scanner.",
+  "requestFramePermissions": ["camera", "microphone", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
