@@ -479,7 +479,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {currentRole === 'delivery' && <Truck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-stone-950 shrink-0" />}
                 {currentRole === 'admin' && <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-purple-200 shrink-0" />}
                 <span className="capitalize text-[10px] sm:text-xs font-bold">
-                  {currentRole === 'customer' ? 'Rahul' : currentRole}
+                  {currentRole === 'customer' ? 'Guest' : currentRole}
                 </span>
                 <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3 opacity-70 shrink-0" />
               </button>
