@@ -255,10 +255,16 @@ export async function syncProductToFirestore(product: Product): Promise<boolean>
   try {
     await ensureAuthenticated();
     const prodRef = doc(db, COLLECTIONS.PRODUCTS, product.id);
+    
+    // Remove undefined values to prevent Firestore errors
+    const cleanedProduct = Object.fromEntries(
+      Object.entries(product).filter(([_, v]) => v !== undefined)
+    );
+
     await setDoc(prodRef, {
-      ...product,
+      ...cleanedProduct,
       syncedAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     }, { merge: true });
     return true;
   } catch (err) {
