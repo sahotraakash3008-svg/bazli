@@ -2147,32 +2147,31 @@ export default function App() {
     showToast('Product updated successfully!');
   };
 
-  const handleDeleteProduct = async (id: string) => {
-    // 1. Update state immediately
-    setProducts(prev => {
-      const filtered = prev.filter(p => p.id !== id);
-      try {
-        localStorage.setItem('bazli_products_v4', JSON.stringify(filtered));
-      } catch (err) {
-        console.error('Failed to update localStorage', err);
-      }
-      return filtered;
-    });
+ const handleDeleteProduct = async (id: string) => {
+  // 1. Delete from Firestore database first
+  const success = await deleteProductFromFirestore(id);
+  if (!success) {
+    console.error('Failed to delete product from database');
+    return;
+  }
 
-    // 2. Remove from cart and wishlist
-    setCartItems(prev => prev.filter(item => item.product.id !== id));
-    setWishlistIds(prev => prev.filter(wId => wId !== id));
-
-    // 3. Delete from Firestore and notify backend
-    deleteProductFromFirestore(id).catch(e => console.warn('Firestore delete note:', e));
+  // 2. Update state immediately
+  setProducts(prev => {
+    const filtered = prev.filter(p => p.id !== id);
     try {
-      await fetch(`/api/products/${id}`, { method: 'DELETE' });
+      localStorage.setItem('bazli_products_v4', JSON.stringify(filtered));
     } catch (err) {
-      console.warn('Backend delete sync note:', err);
+      console.error('Failed to update localStorage', err);
     }
+    return filtered;
+  });
 
-    showToast('Product successfully removed from catalog.');
-  };
+  // 3. Remove from cart and wishlist
+  setCartItems(prev => prev.filter(item => item.product.id !== id));
+  setWishlistIds(prev => prev.filter(wId => wId !== id));
+  
+  showToast('Product successfully removed from catalog.');
+};
 
   // Admin Seller Creation and Update Handlers
   const handleAddSeller = async (sellerData: Partial<Seller>) => {
