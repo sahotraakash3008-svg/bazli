@@ -416,16 +416,11 @@ export default function App() {
       });
     });
 
-    const unsubProducts = subscribeToProducts((cloudProducts) => {
-      if (cloudProducts && cloudProducts.length > 0) {
-        setProducts(prev => {
-          const map = new Map<string, Product>();
-          prev.forEach(p => map.set(p.id, p));
-          cloudProducts.forEach(p => map.set(p.id, p));
-          return Array.from(map.values());
-        });
-      }
-    });
+ const unsubProducts = subscribeToProducts((cloudProducts) => {
+  if (cloudProducts) {
+    setProducts(cloudProducts);
+  }
+});
 
     const unsubSellers = subscribeToSellers((cloudSellers) => {
       if (cloudSellers && cloudSellers.length > 0) {
