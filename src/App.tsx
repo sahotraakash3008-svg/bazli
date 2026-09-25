@@ -79,7 +79,7 @@ import { CustomerRestaurantPortal } from './components/CustomerRestaurantPortal'
 import { CustomerStationeryPortal } from './components/CustomerStationeryPortal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { HyperlocalLiveTrackerBar } from './components/HyperlocalLiveTrackerBar';
-import { SmartRecipeKits } from './components/SmartRecipeKits';
+
 import { VipGoldPassModal } from './components/Customer/VipGoldPassModal';
 import { SavedAddressesModal } from './components/Customer/SavedAddressesModal';
 import { BazliPassModal } from './components/Customer/BazliPassModal';
@@ -3228,13 +3228,7 @@ export default function App() {
                     />
 
                     {/* Innovative 1-Click Smart Meal Kits & Recipe Bundler (Positioned at the very bottom) */}
-                    <div className="pt-8 border-t border-[#ded2bc]/60">
-                      <SmartRecipeKits
-                        products={groceryProducts}
-                        onAddRecipeKitToCart={handleAddRecipeKitToCart}
-                        onOpenProductDetail={setSelectedDetailProduct}
-                      />
-                    </div>
+                    
                   </div>
                 ) : (
                   <div className="space-y-4">
