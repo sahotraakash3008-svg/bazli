@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CartItem, DeliveryZone, Coupon, Product, CustomerAddress } from '../types';
+import { auth } from '../lib/firebase';
 import {
   ShoppingBag,
   X,
@@ -30,6 +31,7 @@ import {
 
 interface CartDrawerProps {
   isOpen: boolean;
+  onOpenLogin?: () => void;
   onClose: () => void;
   cartItems?: CartItem[];
   items?: CartItem[];
@@ -63,6 +65,7 @@ interface CartDrawerProps {
 
 export const CartDrawer: React.FC<CartDrawerProps> = ({
   isOpen,
+  onOpenLogin,
   onClose,
   cartItems: propCartItems,
   items: propItems,
@@ -124,7 +127,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     else handleQtyChange(productId, 0, selectedWeight);
   };
 
-  const handleCheckoutClick = () => {
+const handleCheckoutClick = () => {
+    const user = auth.currentUser;
+    if (!user) {
+      if (onOpenLogin) {
+        onOpenLogin();
+      } else {
+        alert("Please login first to proceed with checkout!");
+      }
+      return;
+    }
+
     hapticSelection();
     if (onProceedToCheckout) {
       onProceedToCheckout();
@@ -132,9 +145,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       onCheckout({
         paymentMethod: 'UPI',
         coinsRedeemed: 0,
-        couponDiscount: couponDiscount,
+        couponDiscount: couponDiscount || 0,
         isExpress: false,
-        deliveryTip: selectedTip,
+        deliveryTip: selectedTip || 0,
         noCutlery,
         ecoPackaging: ecoBag
       });
