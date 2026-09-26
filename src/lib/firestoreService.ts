@@ -276,7 +276,6 @@ export async function syncProductToFirestore(product: Product): Promise<boolean>
 export async function deleteProductFromFirestore(productId: string): Promise<boolean> {
   const path = `${COLLECTIONS.PRODUCTS}/${productId}`;
   try {
-    await ensureAuthenticated();
     await deleteDoc(doc(db, COLLECTIONS.PRODUCTS, productId));
     return true;
   } catch (err) {
