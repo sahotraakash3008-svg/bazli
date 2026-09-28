@@ -520,9 +520,11 @@ export const AdminEditProductModal: React.FC<AdminEditProductModalProps> = ({
               <button
                 type="button"
                 onClick={async () => {
-                  await onDeleteProduct(product.id);
-                  onClose();
-                }}
+  if (onDeleteProduct) {
+    await onDeleteProduct(product.id);
+  }
+  onClose();
+}}
                 className="px-3.5 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 flex items-center gap-1.5 cursor-pointer transition-colors"
               >
                 <Trash2 className="w-3.5 h-3.5" />
