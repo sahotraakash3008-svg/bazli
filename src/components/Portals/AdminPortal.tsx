@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Seller, DeliveryPartner, Order, Product, CustomerProfile, OrderStatus, SellerRegistrationRequest, CustomDeal, Coupon, AppFeatureFlags } from '../../types';
 import { getEffectiveSellerCommission } from '../../utils/sellerCommission';
+import { deleteProductFromFirestore } from '../../lib/firestoreService';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -3442,7 +3443,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             await onUpdateProduct(prodId, updates);
           }
         }}
-        onDeleteProduct={onDeleteProduct}
+        onDeleteProduct={async (prodId) => {
+  await deleteProductFromFirestore(prodId);
+}}
       />
 
       {/* 7. Award Customer Coins Modal */}
