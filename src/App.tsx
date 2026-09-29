@@ -202,14 +202,7 @@ export default function App() {
   }, []);
 
   // App States
-  const [products, setProducts] = useState<Product[]>(() => {
-    try {
-      const saved = localStorage.getItem('bazli_products_v4');
-      return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
-    } catch {
-      return INITIAL_PRODUCTS;
-    }
-  });
+const [products, setProducts] = useState<Product[]>([]);
   const [sellers, setSellers] = useState<Seller[]>(() => {
     try {
       const saved = localStorage.getItem('bazli_sellers') || localStorage.getItem('apnabazar_sellers');
