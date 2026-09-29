@@ -2153,11 +2153,7 @@ export default function App() {
   // 2. Update state immediately
   setProducts(prev => {
     const filtered = prev.filter(p => p.id !== id);
-    try {
-      localStorage.setItem('bazli_products_v4', JSON.stringify(filtered));
-    } catch (err) {
-      console.error('Failed to update localStorage', err);
-    }
+  
     return filtered;
   });
 
