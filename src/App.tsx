@@ -203,6 +203,19 @@ export default function App() {
 
   // App States
 const [products, setProducts] = useState<Product[]>([]);
+useEffect(() => {
+    const unsubscribe = subscribeToProducts((fetchedProducts) => {
+      if (fetchedProducts) {
+        setProducts(fetchedProducts);
+      }
+    });
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, []);
   const [sellers, setSellers] = useState<Seller[]>(() => {
     try {
       const saved = localStorage.getItem('bazli_sellers') || localStorage.getItem('apnabazar_sellers');
